@@ -71,10 +71,9 @@ WORKDIR /work/gecode
 RUN git clone ${GECODE} -b ${BRANCH} .
 RUN ./configure --disable-examples --prefix=/opt/gecode && \
     make install -j ${JOBS}
-# Copy mznlib files and msc file from `share/minizinc/gecode` and
-# `share/minizinc/solvers/gecode.msc`, respectively.
+# Copy bin and share/minizinc.
 WORKDIR /usr/local
-RUN tar cf - -C /opt/gecode/ share/minizinc | tar xpf -
+RUN tar cf - -C /opt/gecode/ bin share/minizinc | tar xpf -
 
 FROM alpine AS build-cbc
 
