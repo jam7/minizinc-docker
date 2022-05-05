@@ -61,7 +61,7 @@ FROM alpine AS build-gecode
 # Generic Constraint Development Environment
 ENV GECODE https://github.com/Gecode/gecode.git
 ENV BRANCH release/6.3.0
-# My develop environment doesn't have enough memory for large size compilation
+# My develop environment doesn't have enough memory for large size compilation.
 ENV JOBS 4
 
 RUN apk add --no-cache ca-certificates curl tar make gcc g++ pkgconfig git perl
@@ -71,13 +71,17 @@ WORKDIR /work/gecode
 RUN git clone ${GECODE} -b ${BRANCH} .
 RUN ./configure --disable-examples --prefix=/opt/gecode && \
     make install -j ${JOBS}
+# Copy mznlib files and msc file from `share/minizinc/gecode` and
+# `share/minizinc/solvers/gecode.msc`, respectively.
+WORKDIR /usr/local
+RUN tar cf - -C /opt/gecode/ share/minizinc | tar xpf -
 
 FROM alpine AS build-cbc
 
 # Computational Infrastructure for Operations Research
 ENV COINBREW https://raw.githubusercontent.com/coin-or/coinbrew/master/coinbrew
 ENV BRANCH releases/2.10.7
-# My develop environment doesn't have enough memory for large size compilation
+# My develop environment doesn't have enough memory for large size compilation.
 ENV JOBS 4
 
 RUN apk add --no-cache ca-certificates curl tar make gcc g++ pkgconfig bash git patch file
@@ -93,13 +97,14 @@ FROM alpine AS build-minizinc
 # MiniZinc
 ENV MINIZINC https://github.com/MiniZinc/libminizinc.git
 ENV BRANCH 2.6.2
-# My develop environment doesn't have enough memory for large size compilation
+# My develop environment doesn't have enough memory for large size compilation.
 ENV JOBS 4
 
 RUN apk add --no-cache ca-certificates curl tar make gcc g++ pkgconfig git cmake zlib-dev
 COPY --from=build-gmp /usr/local /usr/local
 COPY --from=build-mpfr /usr/local /usr/local
 COPY --from=build-gecode /opt/gecode /opt/gecode
+COPY --from=build-gecode /usr/local /usr/local
 COPY --from=build-cbc /opt/cbc /opt/cbc
 WORKDIR /work
 RUN git clone ${MINIZINC} -b ${BRANCH} libminizinc
@@ -125,12 +130,14 @@ WORKDIR /opt/ortools
 RUN curl -L ${ORTOOLS} -o ortools.tar.gz && \
     tar --strip-components 1 -xf ortools.tar.gz && \
     rm ortools.tar.gz
-WORKDIR /usr/local/share/minizinc/solvers
-RUN sed -e '/mznlib/s:^.*$:  "mznlib"\: "/usr/local/share/minizinc/ortools",:' -e '/executable/s:^.*$:  "executable"\: "/usr/local/bin/fzn-or-tools",:' /opt/ortools/share/minizinc/solvers/ortools.msc > ortools.msc
+# Copy only share/minizinc/ortools mznlib files.
 WORKDIR /usr/local
-# Copy only share/minizinc/ortools mznlib files
 RUN tar cf - -C /opt/ortools/ share/minizinc/ortools | tar xpf -
+# Prepare fzn-or-tools script to call fzn-or-tools in another docker container.
 COPY fzn-or-tools.sh /usr/local/bin/fzn-or-tools
+# Create msc file for OR-Tools.
+WORKDIR /usr/local/share/minizinc/solvers
+RUN sed -e '/executable/s:fz:fzn-or-tools:' /opt/ortools/share/minizinc/solvers/ortools.msc > ortools.msc
 
 FROM alpine AS runner
 
