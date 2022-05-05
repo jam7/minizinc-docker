@@ -13,8 +13,12 @@ build: FORCE
 release: FORCE
 	docker build -t jam7/minizinc:${RELEASE_VERSION} ${OPTIONS} .
 
+push: FORCE
+	docker push jam7/minizinc:${RELEASE_VERSION}
+	docker push jam7/minizinc:${VERSION}
+
 run: FORCE
-	docker run --init -it --rm jam7/minizinc sh
+	docker run --init -it --rm -v /var/run/docker.sock:/var/run/docker.sock jam7/minizinc sh
 
 FORCE:
 

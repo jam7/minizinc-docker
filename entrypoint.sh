@@ -10,10 +10,17 @@ if [[ $# == 0 ]]; then
     exit 0
 fi
 
+export LD_LIBRARY_PATH
+LD_LIBRARY_PATH=/opt/gecode/lib
+
 # If we are running docker natively, we want to create a user in the container
 # with the same UID and GID as the user on the host machine, so that any files
 # created are owned by that user. Without this they are all owned by root.
 # The dockcross script sets the MINIZINC_UID and MINIZINC_GID vars.
+MINIZINC_USER=${MINIZINC_USER:-""}
+MINIZINC_UID=${MINIZINC_UID:-""}
+MINIZINC_GROUP=${MINIZINC_GROUP:-""}
+MINIZINC_GID=${MINIZINC_GID:-""}
 if [[ -n "$MINIZINC_UID" ]] && [[ -n "$MINIZINC_GID" ]] && [[ -n "$MINIZINC_GROUP" ]]; then
 
     addgroup -g $MINIZINC_GID $MINIZINC_GROUP
@@ -25,8 +32,12 @@ if [[ -n "$MINIZINC_UID" ]] && [[ -n "$MINIZINC_GID" ]] && [[ -n "$MINIZINC_GROU
     chown root:$MINIZINC_GID $(which su-exec)
     chmod +s $(which su-exec); sync
 
+    # Add docker group
+    addgroup docker
+    addgroup $MINIZINC_USER docker
+
     # Run the command as the specified user/group.
-    exec su-exec $MINIZINC_UID:$MINIZINC_GID "$@"
+    exec su-exec $MINIZINC_USER "$@"
 else
     # Just run the command as root.
     exec "$@"

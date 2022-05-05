@@ -5,11 +5,11 @@ LABEL maintainer "Kazushi (Jam) Marukawa <jam@pobox.com>"
 ENV GMP https://gmplib.org/download/gmp/gmp-6.2.1.tar.xz
 
 RUN apk add --no-cache ca-certificates curl tar xz make gcc g++ pkgconfig m4
-WORKDIR /work
+WORKDIR /work/gmp
 RUN curl -L ${GMP} -o gmp.tar.xz && \
-    tar xf gmp.tar.xz && \
-    cd gmp-*/ && \
-    ./configure && \
+    tar --strip-components 1 -xf gmp.tar.xz && \
+    rm gmp.tar.xz
+RUN ./configure --enable-static && \
     make install-strip -j
 
 FROM alpine AS build-mpfr
@@ -20,12 +20,12 @@ ENV PATCHES https://www.mpfr.org/mpfr-4.1.0/allpatches
 
 RUN apk add --no-cache ca-certificates curl tar xz make gcc g++ pkgconfig patch
 COPY --from=build-gmp /usr/local /usr/local
-WORKDIR /work
+WORKDIR /work/mpfr
 RUN curl -L ${MPFR} -o mpfr.tar.xz && \
-    tar xf mpfr.tar.xz && \
-    cd mpfr-*/ && \
-    curl -L ${PATCHES} | patch -N -Z -p1 && \
-    ./configure && \
+    tar --strip-components 1 -xf mpfr.tar.xz && \
+    rm mpfr.tar.xz
+RUN curl -L ${PATCHES} | patch -N -Z -p1 && \
+    ./configure --enable-static && \
     make install-strip -j
 
 FROM alpine AS build-glpk
@@ -35,11 +35,11 @@ ENV GLPK https://ftp.gnu.org/gnu/glpk/glpk-5.0.tar.gz
 
 RUN apk add --no-cache ca-certificates curl tar make gcc g++ pkgconfig
 COPY --from=build-gmp /usr/local /usr/local
-WORKDIR /work
+WORKDIR /work/glpk
 RUN curl -L ${GLPK} -o glpk.tar.gz && \
-    tar xf glpk.tar.gz && \
-    cd glpk*/ && \
-    ./configure --with-gmp && \
+    tar --strip-components 1 -xf glpk.tar.gz && \
+    rm glpk.tar.gz
+RUN ./configure --with-gmp --enable-static && \
     make install-strip -j
 
 FROM alpine AS build-gsl
@@ -48,11 +48,11 @@ FROM alpine AS build-gsl
 ENV GSL https://ftp.jaist.ac.jp/pub/GNU/gsl/gsl-2.7.1.tar.gz
 
 RUN apk add --no-cache ca-certificates curl tar make gcc g++ pkgconfig
-WORKDIR /work
+WORKDIR /work/gsl
 RUN curl -L ${GSL} -o gsl.tar.gz && \
-    tar xf gsl.tar.gz && \
-    cd gsl*/ && \
-    ./configure && \
+    tar --strip-components 1 -xf gsl.tar.gz && \
+    rm gsl.tar.gz
+RUN ./configure --enable-static && \
     make -j && \
     make install-strip
 
@@ -67,10 +67,9 @@ ENV JOBS 4
 RUN apk add --no-cache ca-certificates curl tar make gcc g++ pkgconfig git perl
 COPY --from=build-gmp /usr/local /usr/local
 COPY --from=build-mpfr /usr/local /usr/local
-WORKDIR /work
-RUN git clone ${GECODE} -b ${BRANCH} && \
-    cd gecode && \
-    ./configure && \
+WORKDIR /work/gecode
+RUN git clone ${GECODE} -b ${BRANCH} .
+RUN ./configure --disable-examples --prefix=/opt/gecode && \
     make install -j ${JOBS}
 
 FROM alpine AS build-cbc
@@ -82,11 +81,12 @@ ENV BRANCH releases/2.10.7
 ENV JOBS 4
 
 RUN apk add --no-cache ca-certificates curl tar make gcc g++ pkgconfig bash git patch file
-WORKDIR /work
+WORKDIR /work/cbc
 # On alpine ldconfig returns errors without any arguments.
 RUN curl -L ${COINBREW} -o coinbrew && \
     chmod a+x coinbrew && \
-    ./coinbrew build Cbc@${BRANCH} -j ${JOBS} --enable-cbc-parallel --prefix=/usr/local || true
+    ./coinbrew fetch Cbc@${BRANCH}
+RUN ./coinbrew build Cbc@${BRANCH} -j ${JOBS} --static --enable-cbc-parallel --prefix=/opt/cbc || true
 
 FROM alpine AS build-minizinc
 
@@ -97,15 +97,17 @@ ENV BRANCH 2.6.2
 ENV JOBS 4
 
 RUN apk add --no-cache ca-certificates curl tar make gcc g++ pkgconfig git cmake zlib-dev
-COPY --from=build-gecode /usr/local /usr/local
-COPY --from=build-cbc /usr/local /usr/local
+COPY --from=build-gmp /usr/local /usr/local
+COPY --from=build-mpfr /usr/local /usr/local
+COPY --from=build-gecode /opt/gecode /opt/gecode
+COPY --from=build-cbc /opt/cbc /opt/cbc
 WORKDIR /work
-RUN git clone ${MINIZINC} -b ${BRANCH} && \
-    cd libminizinc && \
-    mkdir build && \
+RUN git clone ${MINIZINC} -b ${BRANCH} libminizinc
+WORKDIR /work/libminizinc
+RUN mkdir build && \
     cd build && \
-    cmake -DCMAKE_BUILD_TYPE=Release -DUSE_PROPRIETARY=on .. && \
-    make install -j ${JOBS}
+    cmake -DCMAKE_BUILD_TYPE=Release -DUSE_PROPRIETARY=on -DGecode_ROOT=/opt/gecode -DOsiCBC_ROOT=/opt/cbc .. && \
+    make install/strip -j ${JOBS}
 
 #COPY --from=build-gmp /usr/local /usr/local
 #COPY --from=build-mpfr /usr/local /usr/local
@@ -113,11 +115,35 @@ RUN git clone ${MINIZINC} -b ${BRANCH} && \
 #COPY --from=build-gsl /usr/local /usr/local
 #COPY --from=build-gecode /usr/local /usr/local
 
+FROM alpine AS build-ortools
+
+# Google OR-Tools
+ENV ORTOOLS https://github.com/google/or-tools/releases/download/v9.3/or-tools_amd64_flatzinc_alpine-edge_v9.3.10497.tar.gz
+
+RUN apk add --no-cache curl tar
+WORKDIR /opt/ortools
+RUN curl -L ${ORTOOLS} -o ortools.tar.gz && \
+    tar --strip-components 1 -xf ortools.tar.gz && \
+    rm ortools.tar.gz
+WORKDIR /usr/local/share/minizinc/solvers
+RUN sed -e '/mznlib/s:^.*$:  "mznlib"\: "/usr/local/share/minizinc/ortools",:' -e '/executable/s:^.*$:  "executable"\: "/usr/local/bin/fzn-or-tools",:' /opt/ortools/share/minizinc/solvers/ortools.msc > ortools.msc
+WORKDIR /usr/local
+# Copy only share/minizinc/ortools mznlib files
+RUN tar cf - -C /opt/ortools/ share/minizinc/ortools | tar xpf -
+COPY fzn-or-tools.sh /usr/local/bin/fzn-or-tools
+
 FROM alpine AS runner
 
-RUN apk add --no-cache ca-certificates curl su-exec tar pkgconfig libstdc++
+RUN apk add --no-cache ca-certificates curl su-exec tar pkgconfig libstdc++ docker-cli
 
+COPY --from=build-gecode /opt/gecode /opt/gecode
+COPY --from=build-cbc /opt/cbc /opt/cbc
 COPY --from=build-minizinc /usr/local /usr/local
+COPY --from=build-ortools /usr/local /usr/local
+#COPY --from=build-gecode /work /work
+#COPY --from=build-cbc /work /work
+#COPY --from=build-minizinc /work /work
+
 COPY entrypoint.sh /minizinc/entrypoint.sh
 COPY minizinc.sh /minizinc/minizinc.sh
 WORKDIR /work
