@@ -70,10 +70,13 @@ COPY --from=build-mpfr /usr/local /usr/local
 WORKDIR /work/gecode
 RUN git clone ${GECODE} -b ${BRANCH} .
 RUN ./configure --disable-examples --prefix=/opt/gecode && \
-    make install -j ${JOBS}
-# Copy bin and share/minizinc.
+    make install -j ${JOBS} && \
+    strip --strip-unneeded /opt/gecode/bin/fzn-gecode && \
+    strip --strip-unneeded /opt/gecode/lib/*.so*
+
+# Copy bin, lib, and share/minizinc into /usr/local.
 WORKDIR /usr/local
-RUN tar cf - -C /opt/gecode/ bin share/minizinc | tar xpf -
+RUN tar cf - -C /opt/gecode/ bin lib share/minizinc | tar xpf -
 
 FROM alpine AS build-cbc
 
@@ -142,7 +145,6 @@ FROM alpine AS runner
 
 RUN apk add --no-cache ca-certificates curl su-exec tar pkgconfig libstdc++ docker-cli
 
-COPY --from=build-gecode /opt/gecode /opt/gecode
 COPY --from=build-cbc /opt/cbc /opt/cbc
 COPY --from=build-minizinc /usr/local /usr/local
 COPY --from=build-ortools /usr/local /usr/local
