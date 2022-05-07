@@ -94,6 +94,32 @@ RUN curl -L ${COINBREW} -o coinbrew && \
     ./coinbrew fetch Cbc@${BRANCH}
 RUN ./coinbrew build Cbc@${BRANCH} -j ${JOBS} --static --enable-cbc-parallel --prefix=/opt/cbc || true
 
+FROM alpine AS build-chuffed
+
+# Chuffed CP solver
+ENV CHUFFED https://github.com/chuffed/chuffed.git
+ENV BRANCH Update_mznlib
+# My develop environment doesn't have enough memory for large size compilation.
+ENV JOBS 4
+
+RUN apk add --no-cache ca-certificates curl tar make gcc g++ pkgconfig git cmake bison flex zlib-dev
+WORKDIR /work/chuffed
+RUN git clone ${CHUFFED} -b ${BRANCH} .
+WORKDIR /work/chuffed/build
+# Need to handle generated parser.tab.h correctly.  So, add -I to compiler,
+# and remove original parser.tab.h.
+# See https://github.com/chuffed/chuffed/issues/75 for detail.
+RUN CXXFLAGS=-I`pwd`/chuffed/flatzinc cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/opt/chuffed .. && \
+    rm ../chuffed/flatzinc/parser.tab.h && \
+    make install/strip -j ${JOBS}
+# Create msc file for Chuffed.
+WORKDIR /usr/local/share/minizinc/solvers
+RUN sed -e '/mznlib/s:share/chuffed/mznlib:../chuffed:' -e '/executable/s:bin/fzn-chuffed:../../../bin/fzn-chuffed:' -e '/stdFlags/s:"-v":"-t","-v","--cp-profiler":' /opt/chuffed/chuffed.msc > chuffed.msc
+WORKDIR /usr/local/share/minizinc/chuffed
+RUN tar cf - -C /opt/chuffed/share/chuffed/mznlib . | tar xpf -
+WORKDIR /usr/local/bin
+RUN tar cf - -C /opt/chuffed/bin . | tar xpf -
+
 FROM alpine AS build-minizinc
 
 # MiniZinc
@@ -147,6 +173,7 @@ RUN apk add --no-cache ca-certificates curl su-exec tar pkgconfig libstdc++ dock
 
 COPY --from=build-cbc /opt/cbc /opt/cbc
 COPY --from=build-minizinc /usr/local /usr/local
+COPY --from=build-chuffed /usr/local /usr/local
 COPY --from=build-ortools /usr/local /usr/local
 #COPY --from=build-gecode /work /work
 #COPY --from=build-cbc /work /work
