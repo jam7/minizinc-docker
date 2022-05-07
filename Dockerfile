@@ -171,7 +171,7 @@ FROM alpine AS runner
 
 RUN apk add --no-cache ca-certificates curl su-exec tar pkgconfig libstdc++ docker-cli
 
-COPY --from=build-cbc /opt/cbc /opt/cbc
+#COPY --from=build-cbc /opt/cbc /opt/cbc
 COPY --from=build-minizinc /usr/local /usr/local
 COPY --from=build-chuffed /usr/local /usr/local
 COPY --from=build-ortools /usr/local /usr/local
